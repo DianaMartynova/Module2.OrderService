@@ -1,76 +1,56 @@
 package org.example;
 
+import org.example.discount.DiscountStrategy;
+import org.example.discount.DiscountStrategyFactory;
+import org.example.payment.CommissionStrategy;
+import org.example.payment.CommissionStrategyFactory;
+import org.example.receipt.ConsoleReceiptPrinter;
+import org.example.receipt.ReceiptPrinter;
+import org.example.validation.DefaultOrderValidator;
+import org.example.validation.OrderValidator;
+
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- Контекст: Тебе достался в наследство код от предыдущего разработчика — сервис обработки заказов интернет-магазина OrderService.
- Он работает, тесты (если бы они были) прошли бы, заказчик доволен... пока не попросил добавить новый тип клиента или способ оплаты.
- Тут выясняется, что каждое такое "простое" изменение требует лезть в один и тот же метод на 80 строк, где всё завязано друг на друга,
- и есть риск что-то сломать в соседней логике.
- Твоя задача: не переписать сервис с нуля, а отрефакторить — сохранив то же поведение (те же скидки, та же комиссия, тот же чек)
- Опирайся на SOLID и паттерны проектирования
-Lombok использовать нельзя, все писать руками.
- */
 public class OrderService {
-
 
     private final List<Order> orders = new ArrayList<>();
 
+    private final DiscountStrategyFactory discountFactory;
+    private final CommissionStrategyFactory commissionFactory;
+    private final OrderValidator validator;
+    private final ReceiptPrinter receiptPrinter;
+
+    public OrderService() {
+        this(new DiscountStrategyFactory(),
+             new CommissionStrategyFactory(),
+             new DefaultOrderValidator(),
+             new ConsoleReceiptPrinter());
+    }
+
+    public OrderService(DiscountStrategyFactory discountFactory,
+                        CommissionStrategyFactory commissionFactory,
+                        OrderValidator validator,
+                        ReceiptPrinter receiptPrinter) {
+        this.discountFactory = discountFactory;
+        this.commissionFactory = commissionFactory;
+        this.validator = validator;
+        this.receiptPrinter = receiptPrinter;
+    }
+
     public double processOrder(Order order) {
+        validator.validate(order);
 
-        // --- валидация ---
-        if (order.getAmount() <= 0) {
-            throw new RuntimeException("Order amount must be positive");
-        }
-        if (order.getItems() == null || order.getItems().isEmpty()) {
-            throw new RuntimeException("Order must contain at least one item");
-        }
+        DiscountStrategy discountStrategy = discountFactory.getStrategy(order.getCustomerType());
+        CommissionStrategy commissionStrategy = commissionFactory.getStrategy(order.getPaymentType());
 
-        // --- расчёт скидки по типу клиента ---
-        double discount = 0.0;
-        String customerType = order.getCustomerType();
-        if (customerType.equals("REGULAR")) {
-            discount = 0.0;
-        } else if (customerType.equals("VIP")) {
-            discount = order.getAmount() * 0.05;
-        } else if (customerType.equals("PREMIUM")) {
-            discount = order.getAmount() * 0.10;
-        } else {
-            // TODO: добавить новый тип клиента — дописать ещё один else if
-            throw new RuntimeException("Unknown customer type: " + customerType);
-        }
-
-        // --- расчёт комиссии по способу оплаты ---
-        double commission = 0.0;
-        String paymentType = order.getPaymentType();
-        if (paymentType.equals("CARD")) {
-            commission = order.getAmount() * 0.02;
-        } else if (paymentType.equals("CASH")) {
-            commission = 0.0;
-        } else if (paymentType.equals("TRANSFER")) {
-            commission = order.getAmount() * 0.01;
-        } else {
-            // TODO: добавить новый способ оплаты — дописать ещё один else if
-            throw new RuntimeException("Unknown payment type: " + paymentType);
-        }
-
-        // --- итоговая сумма ---
+        double discount = discountStrategy.calculateDiscount(order);
+        double commission = commissionStrategy.calculateCommission(order);
         double finalAmount = order.getAmount() - discount + commission;
 
-        // --- формирование чека прямо тут ---
-        System.out.println("=== RECEIPT ===");
-        System.out.println("Order ID: " + order.getId());
-        System.out.println("Items: " + order.getItems());
-        System.out.println("Base amount: " + order.getAmount());
-        System.out.println("Discount: -" + discount);
-        System.out.println("Commission: +" + commission);
-        System.out.println("Final amount: " + finalAmount);
-        System.out.println("================");
+        receiptPrinter.print(order, discount, commission, finalAmount);
 
-        // --- "сохранение" заказа  ---
         orders.add(order);
-
         return finalAmount;
     }
 
